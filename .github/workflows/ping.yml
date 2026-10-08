@@ -1,0 +1,34 @@
+name: ping
+on:
+  schedule:
+    - cron: "*/5 3-23 * * 1"     # segunda, a partir de 00:00 BRT (03:00 UTC)
+    - cron: "*/5 * * * 2-5"      # terça a sexta
+    - cron: "*/5 0-2 * * 6"      # sexta à noite em BRT (sábado 00:00-02:55 UTC)
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Ping Render
+        id: render
+        run: |
+          curl -fsS --max-time 90 --retry 3 --retry-delay 20 --retry-all-errors "${{ secrets.RENDER_URL }}"
+      - name: Ping Supabase
+        id: supabase
+        if: always()
+        run: |
+          curl -fsS --max-time 30 --retry 3 --retry-delay 10 --retry-all-errors \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            "${{ secrets.SUPABASE_PING_URL }}"
+      - name: Avisar no Discord
+        if: failure()
+        run: |
+          # só avisa uma vez por hora para não lotar o canal
+          if [ "$(date -u +%M)" -lt 10 ]; then
+            MSG="⚠️ Ping falhou — Render: ${{ steps.render.outcome }} | Supabase: ${{ steps.supabase.outcome }}"
+            curl -fsS -H "Content-Type: application/json" \
+              -d "{\"content\":\"$MSG\"}" "${{ secrets.DISCORD_WEBHOOK }}"
+          fi
